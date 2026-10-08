@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "JetBrains-style session tabs for the DSH Web GUI conversation panel",
+  "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -24,6 +25,7 @@
     "lib/client.js",
     "lib/policy.js",
     "verify.mjs",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ]
 }

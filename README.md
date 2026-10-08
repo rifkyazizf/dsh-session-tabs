@@ -322,29 +322,51 @@ fails 2.
 
 ## Install
 
-Installed into the **`desktop`** profile (the Electron app's profile):
+The plugin goes into the **`desktop`** profile, which the DeepSeek Harness app
+owns. The `dsh plugin` command refuses that profile, so edit its files directly.
 
-- package: `~/.dsh/plugins/dsh-session-tabs`
-- symlinked to `~/.dsh/profiles/desktop/node_modules/dsh-session-tabs`
-- dependency listed in `~/.dsh/profiles/desktop/package.json`
-- loader row `ui-session-tabs` appended to
-  `~/.dsh/profiles/desktop/cordis.patch.yml`
-- registered in **`conversation.input.dock`** (list seat, id `session-tabs`,
-  order 10) and drawn in its own row under the conversation header
+1. Quit DeepSeek Harness.
+2. Add the package to `dependencies` in `~/.dsh/profiles/desktop/package.json`:
 
-That patch file is watched live (`patchReload: live`); the client bundle is
-polled by DSH's client-HMR row, so edits to `lib/client.js` hot-reload in an open
-tab. Adding a *new* plugin row for the first time needs one page refresh.
+   ```json
+   "dsh-session-tabs": "github:rifkyazizf/dsh-session-tabs"
+   ```
 
-Backups of the pre-install configuration are kept beside it as
-`cordis.patch.yml.pre-session-tabs` and `package.json.pre-session-tabs`.
+3. Install it from the profile directory:
+
+   ```bash
+   cd ~/.dsh/profiles/desktop && pnpm install
+   ```
+
+4. Append the loader row to `~/.dsh/profiles/desktop/cordis.patch.yml`:
+
+   ```yaml
+   - insert:
+       - id: ui-session-tabs
+         name: 'dsh-session-tabs'
+   ```
+
+5. Start DeepSeek Harness. The tab strip shows at the top of the conversation panel.
+
+To pin a version, append a tag or commit to the spec, for example
+`github:rifkyazizf/dsh-session-tabs#a8f106b`. To update, run `pnpm update
+dsh-session-tabs` in the profile directory.
+
+For local development, clone the repo and point the dependency at the clone with
+`"file:/path/to/dsh-session-tabs"`. The profile is watched live
+(`patchReload: live`) and DSH's client-HMR row polls the client bundle, so edits
+to `lib/client.js` hot-reload in an open tab. A new plugin row needs one page
+refresh the first time.
+
+The strip is registered in **`conversation.input.dock`** (list seat, id
+`session-tabs`, order 10) and drawn in its own row under the conversation header.
 
 ## Disable or remove
 
-Comment out the `ui-session-tabs` insert in
-`~/.dsh/profiles/desktop/cordis.patch.yml`. Remove the package directory, the
-symlink, and the dependency entry to uninstall. Changes take effect on the next
-page refresh.
+To disable the strip, comment out the `ui-session-tabs` insert in
+`~/.dsh/profiles/desktop/cordis.patch.yml`. To uninstall, also remove the
+dependency and run `pnpm install` in the profile directory. Changes take effect
+on the next page refresh.
 
 ## Known gaps
 
@@ -367,3 +389,7 @@ page refresh.
   the three bulk closes only — no pin, fork, or archive (those stay in the sidebar).
 - **The menu is English-only.** The plugin registers no locale dictionaries, unlike
   the shipped client plugins, which pass their rows through `ctx.locale`.
+
+## License
+
+[MIT](LICENSE)
