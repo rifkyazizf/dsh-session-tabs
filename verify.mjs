@@ -902,7 +902,7 @@ const renderStrip = (sessions) => {
 	const { contextMenuRows } = inline;
 	const rows = contextMenuRows(4, 1);
 	assertEqual(rows.map((row) => row.id), ["rename", "close-left", "close-right", "close-others"], "menu rows, in order");
-	assertEqual(rows.map((row) => row.label), ["Rename session", "Close all left", "Close all right", "Close all others"], "menu labels");
+	assertEqual(rows.map((row) => row.label), ["Rename session", "Close all left", "Close all right", "Close others"], "menu labels");
 	assertEqual(rows[0].kind, "rename", "the first row is the rename action");
 	assertEqual(rows.slice(1).map((row) => row.side), ["left", "right", "others"], "each bulk close carries its side");
 	assertEqual(rows.map((row) => row.disabled === true), [false, false, false, false], "a middle tab leaves every row live");
@@ -1140,7 +1140,7 @@ const createDoc = () => ({ createElement: (tag) => ({ tag, style: {}, attrs: {},
 	const chips = findAll(element, "data-session-tab");
 	const dot = (chip) => chip.props.children[0].props.style;
 	assertEqual(dot(chips[0]).background.includes("success"), true, "a running session's chip shows the running dot");
-	assertEqual(dot(chips[1]).background, "transparent", "a still session's chip has no running dot");
+	assertEqual(findAll(chips[1], "aria-hidden").length, 0, "a still session has no running dot");
 }
 
 // Closing: the control is *reserved*, and only its visibility follows the
@@ -1177,6 +1177,98 @@ const createDoc = () => ({ createElement: (tag) => ({ tag, style: {}, attrs: {},
 	assert(closeControl(previewChip[0]) === void 0, "a preview tab must not carry a control");
 }
 
+// Drive the real strip through its group menu and reload the client bundle.
+{
+	const key = "dsh.session-tab-groups.v1";
+	const previous = globalThis.localStorage;
+	const storage = new Map();
+	globalThis.localStorage = {
+		getItem: (name) => storage.get(name) ?? null,
+		setItem: (name, value) => storage.set(name, value)
+	};
+	const sessions = list([row("a", true), row("b", true), row("c", true)], "a");
+
+	const mount = () => {
+		const state = [];
+		let cursor = 0;
+		const client = captured.factory((id) => {
+			const dependency = fakeRequire(id);
+			if (id !== "react") return dependency;
+			return {
+				...dependency,
+				useState(initial) {
+					const index = cursor++;
+					if (!(index in state)) state[index] = typeof initial === "function" ? initial() : initial;
+					return [state[index], (next) => {
+						state[index] = typeof next === "function" ? next(state[index]) : next;
+					}];
+				}
+			};
+		});
+		let seat;
+		client.apply({
+			slots: {
+				inject(name, callback) { callback(); },
+				register(meta, component) { seat = component; }
+			},
+			get: () => undefined
+		});
+		const dock = seat({ useSessions: (select) => select(sessions), sessionId: "a" });
+		const strip = dock.type(dock.props).props.children[1];
+		return () => {
+			cursor = 1;
+			return strip.type(strip.props);
+		};
+	};
+	const choose = (render, label) => {
+		const menu = render().props.children[1];
+		const item = menu.props.items.find((row) => row.label === label);
+		menu.props.onClose();
+		item.onSelect();
+	};
+	const openTabMenu = (render, id) => {
+		const tabs = render().props.children;
+		tabs.find((tab) => tab.props.id === id).props.onContextMenu(10, 10);
+	};
+	const group = (render) => findAll(render(), "data-session-tab-group")[0];
+	const groupHeader = (render) => group(render).props.children[0];
+
+	try {
+		const render = mount();
+		openTabMenu(render, "a");
+		choose(render, "Move to new group");
+		groupHeader(render).props.onKeyDown({ key: "Enter", currentTarget: { value: " Planning " } });
+		openTabMenu(render, "c");
+		choose(render, "Move to Planning");
+		assertEqual(group(render).props.children.slice(1).map((tab) => tab.props.id), ["a", "c"], "members render together");
+		const contextEvent = {
+			preventDefault() {},
+			clientX: 10,
+			clientY: 10,
+			currentTarget: { getBoundingClientRect: () => ({ left: 10, bottom: 10 }) }
+		};
+		groupHeader(render).props.onContextMenu(contextEvent);
+		choose(render, "Green");
+		groupHeader(render).props.onClick();
+		assertEqual(group(render).props.children.length, 1, "a collapsed group hides its tabs");
+		assertEqual(groupHeader(render).props["data-active"], "true", "the collapsed header marks the active session");
+		assertEqual(JSON.parse(storage.get(key))[0].color, "Green", "the selected color is saved");
+
+		const reload = mount();
+		assertEqual(groupHeader(reload).props["aria-label"], "Planning", "the name survives a reload");
+		assertEqual(groupHeader(reload).props["aria-expanded"], false, "collapse survives a reload");
+		groupHeader(reload).props.onClick();
+		assertEqual(group(reload).props.children.slice(1).map((tab) => tab.props.id), ["a", "c"], "membership survives a reload");
+		groupHeader(reload).props.onContextMenu(contextEvent);
+		choose(reload, "Ungroup tabs");
+		assertEqual(group(reload), undefined, "ungrouping removes the group");
+		assertEqual(reload().props.children.map((tab) => tab.props.id), ["a", "b", "c"], "ungrouping keeps all tabs open");
+	} finally {
+		if (previous === undefined) delete globalThis.localStorage;
+		else globalThis.localStorage = previous;
+	}
+}
+
 // An empty list with a current id that has no row must not throw.
 {
 	assertEqual(deriveTabs({ ids: [], byId: {}, current: "missing", order: [] }).ids, [], "an unknown current id is ignored");
@@ -1184,6 +1276,6 @@ const createDoc = () => ({ createElement: (tag) => ({ tag, style: {}, attrs: {},
 
 if (process.exitCode === void 0) {
 	console.log(
-		`ok: recycle rule + full-order memory (no rotation) + sideways strip + chip labels + wheel mapping + inline parity + ${DOCK_SLOT} registration (list id ${DOCK_ID}) + top-row anchoring (dock fallback) + bulk closes + context menu (rename via sessions.rename) + fixed-width chips + reserved close slot (own hover) + chip navigation + close renders + dismissal memory (remount + reload persisted) verified`
+		`ok: recycle rule + full-order memory (no rotation) + sideways strip + chip labels + wheel mapping + inline parity + ${DOCK_SLOT} registration (list id ${DOCK_ID}) + top-row anchoring (dock fallback) + bulk closes + context menu (rename via sessions.rename) + fixed-width chips + reserved close slot (own hover) + chip navigation + close renders + dismissal memory (remount + reload persisted) + persistent tab groups verified`
 	);
 }
